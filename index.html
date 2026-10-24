@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Napoleonic Wars: Age of Eagles</title>
+<style>
+:root{--bg:#101820;--panel:#182631;--gold:#e3bd72;--ink:#f5f0e5;--muted:#b8c3c8}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,sans-serif;overflow:hidden}
+#game{position:fixed;inset:0}canvas{display:block;width:100%;height:100%;touch-action:none}
+.panel{position:fixed;background:rgba(16,26,34,.92);border:1px solid rgba(227,189,114,.45);border-radius:12px;padding:10px 12px;backdrop-filter:blur(5px);box-shadow:0 6px 24px #0005}
+#top{top:10px;left:10px;right:10px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+h1{font-size:15px;line-height:1.1;margin:0;color:var(--gold)}#sub{font-size:11px;color:var(--muted);margin-top:3px}
+#stats{font-size:11px;text-align:right;line-height:1.55}
+#left{left:10px;top:86px;width:180px;max-width:47vw}
+#right{right:10px;top:86px;width:174px;max-width:45vw}
+.label{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--gold);margin-bottom:6px}
+#selected{font-size:13px;font-weight:700}#details{font-size:11px;line-height:1.45;color:var(--muted);margin-top:4px}
+button{background:#293c47;color:var(--ink);border:1px solid #5d717a;border-radius:8px;padding:9px 8px;font-weight:650;font-size:12px;cursor:pointer}
+button:active{transform:scale(.98)}button:disabled{opacity:.35}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}.actions button:last-child{grid-column:1/-1;background:#6b4d27;border-color:#d3a65a}
+#log{left:10px;bottom:10px;max-width:min(420px,calc(100vw - 20px));font-size:11px;line-height:1.35;max-height:82px;overflow:auto}
+#hint{right:10px;bottom:10px;font-size:10px;color:var(--muted);max-width:160px;text-align:right}
+#toast{position:fixed;top:68px;left:50%;transform:translateX(-50%);background:#f1d18c;color:#18232a;padding:7px 12px;border-radius:20px;font-size:12px;font-weight:800;display:none;white-space:nowrap}
+@media(max-width:560px){#left{top:82px;width:150px;padding:8px}#right{top:82px;width:145px;padding:8px}.panel{border-radius:10px}button{padding:8px 5px;font-size:11px}#log{max-width:calc(100vw - 20px);bottom:8px}#hint{display:none}#stats{font-size:10px}h1{font-size:13px}}
+</style>
+</head>
+<body>
+<div id="game"></div>
+<div id="top" class="panel"><div><h1>⚔ NAPOLEONIC WARS: AGE OF EAGLES</h1><div id="sub">Prototype • Turn-based command + real-time formations</div></div><div id="stats"><div id="turn">TURN 1 • 1805</div><div id="army">🇫🇷 3,000 vs 🇦🇹 3,000</div></div></div>
+<div id="left" class="panel"><div class="label">Command</div><div id="selected">Select a unit</div><div id="details">Tap one of your blue units, then choose an order.</div><div class="actions"><button id="move">↗ Move</button><button id="fire">🔥 Fire</button><button id="charge">🐎 Charge</button><button id="form">▥ Formation</button><button id="end">⏭ End Turn</button></div></div>
+<div id="right" class="panel"><div class="label">Battle orders</div><div style="font-size:11px;line-height:1.55;color:var(--muted)">🔵 French forces<br>🔴 Austrian forces<br><br>Tap a French unit to select it. Tap open ground to move, or an enemy to attack. Infantry hold the line; cavalry hit hard on a charge; artillery fires at range.</div></div>
+<div id="log" class="panel">📯 The French advance. Select a unit to issue your first order.</div><div id="hint">Drag to rotate view • Pinch/scroll to zoom</div><div id="toast"></div>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script>
+(() => {
+const root=document.getElementById('game'), logEl=document.getElementById('log'), selEl=document.getElementById('selected'), detEl=document.getElementById('details');
+if(!window.THREE){root.innerHTML='<div style="padding:25px;color:white">This prototype needs an internet connection to load its 3D engine. Please open this file while online.</div>';return;}
+const scene=new THREE.Scene(); scene.background=new THREE.Color(0x9fb3b2); scene.fog=new THREE.Fog(0x9fb3b2,45,100);
+const camera=new THREE.PerspectiveCamera(48,innerWidth/innerHeight,.1,180); camera.position.set(0,27,34); camera.lookAt(0,0,0);
+const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,1.8));renderer.setSize(innerWidth,innerHeight);renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;renderer.outputColorSpace=THREE.SRGBColorSpace;root.appendChild(renderer.domElement);
+scene.add(new THREE.HemisphereLight(0xe6f1ff,0x586044,2.0));const sun=new THREE.DirectionalLight(0xffe2b0,2.5);sun.position.set(-12,24,15);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);scene.add(sun);
+const mat=(c,rough=1)=>new THREE.MeshStandardMaterial({color:c,roughness:rough});
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(100,100),mat(0x66784b));ground.rotation.x=-Math.PI/2;ground.receiveShadow=true;scene.add(ground);
+const grid=new THREE.GridHelper(60,30,0x9ca77a,0x7f9065);grid.position.y=.025;grid.material.transparent=true;grid.material.opacity=.25;scene.add(grid);
+function box(x,z,w,h,d,color,rot=0){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat(color));m.position.set(x,h/2,z);m.rotation.y=rot;m.castShadow=true;m.receiveShadow=true;scene.add(m);return m;}
+function tree(x,z,s=1){const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.12*s,.18*s,.9*s,6),mat(0x5b4028));trunk.position.set(x,.45*s,z);scene.add(trunk);const crown=new THREE.Mesh(new THREE.ConeGeometry(.75*s,1.7*s,7),mat(0x304f31));crown.position.set(x,1.5*s,z);crown.castShadow=true;scene.add(crown)}
+for(let i=0;i<20;i++){let x=(Math.random()-.5)*62,z=(Math.random()-.5)*48;if(Math.abs(x)>10||Math.abs(z)>7)tree(x,z,.65+Math.random()*.6)}
+// A road and a low stone bridge create tactical landmarks.
+const road=new THREE.Mesh(new THREE.PlaneGeometry(7,58),mat(0xb5a17c));road.rotation.x=-Math.PI/2;road.position.set(0,.04,0);scene.add(road);
+for(let i=0;i<9;i++){box(-4.3, -20+i*5, .45,.7,1.4,0x8a8879);box(4.3,-20+i*5,.45,.7,1.4,0x8a8879)}
+box(0,-8,9,.22,1.2,0x8b8d86);box(0,-8,1.1,.5,1.2,0xb4b5ad);
+const units=[];let selected=null,turn=1,phase='player',orderMode='select',dragging=false,down={x:0,y:0},last={x:0,y:0},camYaw=0,camDist=43;
+function soldier(parent,x,z,color,hat){const g=new THREE.Group();const body=new THREE.Mesh(new THREE.CylinderGeometry(.13,.16,.48,6),mat(color));body.position.y=.55;g.add(body);const head=new THREE.Mesh(new THREE.SphereGeometry(.12,7,6),mat(0xd7b18a));head.position.y=.88;g.add(head);const cap=new THREE.Mesh(new THREE.CylinderGeometry(.13,.13,.09,6),mat(hat));cap.position.y=1.01;g.add(cap);const musket=new THREE.Mesh(new THREE.BoxGeometry(.045,.65,.045),mat(0x332a20));musket.position.set(.18,.64,.03);musket.rotation.z=-.15;g.add(musket);g.position.set(x,0,z);parent.add(g);return g}
+function createUnit(name,side,type,x,z,count){const group=new THREE.Group();scene.add(group);group.position.set(x,0,z);const u={name,side,type,x,z,count,max:count,morale:100,used:false,group,soldiers:[],formation:0,alive:true};const cols=type==='Infantry'?7:type==='Cavalry'?4:3,rows=type==='Infantry'?3:type==='Cavalry'?2:2;
+for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){if(u.soldiers.length>=Math.min(count/45,21))break;let xx=(c-(cols-1)/2)*.38,zz=(r-(rows-1)/2)*.48;if(type==='Cavalry'){const horse=new THREE.Mesh(new THREE.BoxGeometry(.48,.42,.75),mat(side==='fr'?0x4b3020:0x59402e));horse.position.set(xx,.4,zz);group.add(horse);const rider=soldier(group,xx,zz,side==='fr'?0x243c7a:0x8b2929,side==='fr'?0x222222:0x31251c);rider.scale.set(.75,.85,.75)}else{u.soldiers.push(soldier(group,xx,zz,side==='fr'?(type==='Artillery'?0x343b42:0x233e83):(type==='Artillery'?0x4c4237:0x8c2929),side==='fr'?0x222222:0x33251d))}}
+const ring=new THREE.Mesh(new THREE.RingGeometry(1.05,1.22,32),new THREE.MeshBasicMaterial({color:side==='fr'?0x5ca8ff:0xff5555,side:THREE.DoubleSide}));ring.rotation.x=-Math.PI/2;ring.position.y=.06;group.add(ring);u.ring=ring;
+const flag=new THREE.Group();const pole=new THREE.Mesh(new THREE.CylinderGeometry(.035,.035,2.4,5),mat(0xd6c7a1));pole.position.set(-1.1,1.2,0);flag.add(pole);const cloth=new THREE.Mesh(new THREE.BoxGeometry(.65,.36,.04),mat(side==='fr'?0x315ca8:0xb52b2b));cloth.position.set(-.78,2,0);flag.add(cloth);group.add(flag);u.flag=flag;
+const hit=new THREE.Mesh(new THREE.CircleGeometry(1.6,20),new THREE.MeshBasicMaterial({transparent:true,opacity:0,side:THREE.DoubleSide}));hit.rotation.x=-Math.PI/2;hit.position.y=.1;group.add(hit);u.hit=hit;
+units.push(u);updateUnit(u);return u}
+function updateUnit(u){u.group.position.set(u.x,0,u.z);u.ring.scale.setScalar(u.alive?1:0);u.flag.visible=u.alive;u.group.visible=u.alive;u.soldiers.forEach((s,i)=>{s.visible=i<Math.max(1,Math.ceil(u.count/u.max*u.soldiers.length))});}
+createUnit('1st Line Infantry','fr','Infantry',-7,10,1000);createUnit('2nd Line Infantry','fr','Infantry',0,14,1000);createUnit('Chasseurs à Cheval','fr','Cavalry',7,10,500);createUnit('Grand Battery','fr','Artillery',0,20,500);
+createUnit('Austrian Line','at','Infantry',-7,-10,1000);createUnit('Grenadiers','at','Infantry',0,-13,1000);createUnit('Hussars','at','Cavalry',7,-10,500);createUnit('Austrian Guns','at','Artillery',0,-19,500);
+const raycaster=new THREE.Raycaster(),mouse=new THREE.Vector2();
+function pick(e){const r=renderer.domElement.getBoundingClientRect();mouse.x=((e.clientX-r.left)/r.width)*2-1;mouse.y=-((e.clientY-r.top)/r.height)*2+1;raycaster.setFromCamera(mouse,camera);let objs=[];units.filter(u=>u.alive).forEach(u=>objs.push(u.hit));const hits=raycaster.intersectObjects(objs,false);if(hits.length){return units.find(u=>u.hit===hits[0].object)}const plane=new THREE.Plane(new THREE.Vector3(0,1,0),0),p=new THREE.Vector3();raycaster.ray.intersectPlane(plane,p);return p}
+function log(s){logEl.innerHTML=s+'<br>'+logEl.innerHTML;logEl.innerHTML=logEl.innerHTML.split('<br>').slice(0,5).join('<br>')}
+function toast(s){const t=document.getElementById('toast');t.textContent=s;t.style.display='block';clearTimeout(toast.timer);toast.timer=setTimeout(()=>t.style.display='none',1800)}
+function select(u){selected=u;units.forEach(a=>a.ring.material.color.set(a===u?0xffe082:(a.side==='fr'?0x5ca8ff:0xff5555)));if(!u){selEl.textContent='Select a unit';detEl.textContent='Tap a French unit, then choose an order.'}else{selEl.textContent=(u.side==='fr'?'🇫🇷 ':'🇦🇹 ')+u.name;detEl.innerHTML=`${u.type} • ${u.count.toLocaleString()} men<br>Morale ${u.morale}% • ${u.used?'Orders spent':'Ready for orders'}${u.formation?' • Line formation':''}`;}document.getElementById('move').disabled=!u||u.side!=='fr'||u.used;document.getElementById('fire').disabled=!u||u.side!=='fr'||u.used;document.getElementById('charge').disabled=!u||u.side!=='fr'||u.used||u.type!=='Cavalry';document.getElementById('form').disabled=!u||u.side!=='fr'||u.used;}
+function worldTap(p){if(p&&p.isVector3){if(orderMode==='move'&&selected&&selected.side==='fr'&&!selected.used){let dx=p.x-selected.x,dz=p.z-selected.z,dist=Math.hypot(dx,dz);if(dist>12){dx*=12/dist;dz*=12/dist}selected.x+=dx;selected.z+=dz;selected.used=true;updateUnit(selected);log('↗ '+selected.name+' advances into position.');orderMode='select';select(selected);return}
+if(orderMode==='fire'&&selected&&selected.side==='fr'&&!selected.used){let target=nearestEnemy(p,selected);if(target){attack(selected,target,false);selected.used=true;orderMode='select';select(selected)}else toast('Tap closer to an enemy unit');return}
+select(null);return}
+if(p&&p.side){if(p.side==='fr'){select(p);orderMode='select'}else if(selected&&selected.side==='fr'&&!selected.used){const d=Math.hypot(p.x-selected.x,p.z-selected.z);if(orderMode==='charge'&&selected.type==='Cavalry'&&d<13){attack(selected,p,true);selected.used=true;orderMode='select';select(selected)}else if(orderMode==='fire'&&d<(selected.type==='Artillery'?24:8)){attack(selected,p,false);selected.used=true;orderMode='select';select(selected)}else{toast('Out of range — move closer');}}else{select(p)}}}
+function nearestEnemy(p,u){return units.filter(a=>a.alive&&a.side!==u.side).sort((a,b)=>Math.hypot(a.x-p.x,a.z-p.z)-Math.hypot(b.x-p.x,b.z-p.z))[0]}
+function attack(a,b,charge){const d=Math.hypot(a.x-b.x,a.z-b.z);const range=a.type==='Artillery'?25:(charge?13:8);if(d>range){toast('Target out of range');return}let base=a.type==='Artillery'?190:a.type==='Cavalry'?(charge?240:90):150;let loss=Math.max(35,Math.round(base*(.65+Math.random()*.7)*(charge?1.25:1)));b.count=Math.max(0,b.count-loss);b.morale=Math.max(0,b.morale-(charge?20:12));updateUnit(b);log(`${charge?'🐎 Charge!':'💥 Volley!'} ${a.name} hits ${b.name}: ${Math.min(loss,b.count+loss).toLocaleString()} casualties.`);if(!b.count){b.alive=false;log('🏳 '+b.name+' has been destroyed!')}if(b.morale<25&&b.alive){b.x+=(b.side==='fr'?1:-1)*2;log('⚠ '+b.name+' wavers and falls back!')}refreshStats();checkWin()}
+function refreshStats(){let f=units.filter(u=>u.side==='fr'&&u.alive).reduce((s,u)=>s+u.count,0),e=units.filter(u=>u.side==='at'&&u.alive).reduce((s,u)=>s+u.count,0);document.getElementById('army').textContent=`🇫🇷 ${f.toLocaleString()} vs 🇦🇹 ${e.toLocaleString()}`}
+function checkWin(){if(!units.some(u=>u.side==='at'&&u.alive)){toast('🏆 French victory!');log('🏆 Victory! The Austrian line has collapsed.')}if(!units.some(u=>u.side==='fr'&&u.alive)){toast('Defeat — the French army is broken.');log('💔 The French army has been defeated.')}}
+function enemyTurn(){phase='enemy';log('🇦🇹 Austrian command: volleys and artillery answer the French.');const enemies=units.filter(u=>u.side==='at'&&u.alive);enemies.forEach(e=>{const targets=units.filter(u=>u.side==='fr'&&u.alive).sort((a,b)=>Math.hypot(a.x-e.x,a.z-e.z)-Math.hypot(b.x-e.x,b.z-e.z));if(!targets.length)return;let t=targets[0],d=Math.hypot(t.x-e.x,t.z-e.z),range=e.type==='Artillery'?25:9;if(d<=range){let loss=Math.round((e.type==='Artillery'?140:115)*(.6+Math.random()*.65));t.count=Math.max(0,t.count-loss);t.morale=Math.max(0,t.morale-10);updateUnit(t);log(`🔴 Austrian ${e.type.toLowerCase()} fire: ${t.name} loses ${loss} men.`);if(!t.count){t.alive=false;log('🏳 '+t.name+' has been destroyed!')}}else{let dx=t.x-e.x,dz=t.z-e.z,len=Math.hypot(dx,dz);e.x+=dx/len*2.5;e.z+=dz/len*2.5;updateUnit(e)}});turn++;units.filter(u=>u.side==='fr').forEach(u=>u.used=false);phase='player';document.getElementById('turn').textContent=`TURN ${turn} • 1805`;refreshStats();select(selected&&selected.alive?selected:null);checkWin();log('📯 Your turn. Issue orders to the French units.')}
+document.getElementById('move').onclick=()=>{if(selected){orderMode='move';toast('Tap the ground where you want to move.')}};
+document.getElementById('fire').onclick=()=>{if(selected){orderMode='fire';toast('Tap an enemy to fire, or tap ground near them.')}};
+document.getElementById('charge').onclick=()=>{if(selected){orderMode='charge';toast('Tap an enemy unit to charge!')}};
+document.getElementById('form').onclick=()=>{if(selected){selected.formation=1-selected.formation;selected.group.rotation.y=selected.formation?Math.PI/2:0;selected.used=true;log('▥ '+selected.name+' changes formation.');select(selected)}};
+document.getElementById('end').onclick=()=>{if(phase==='player')enemyTurn()};
+renderer.domElement.addEventListener('pointerdown',e=>{dragging=true;down={x:e.clientX,y:e.clientY};last={...down};});
+renderer.domElement.addEventListener('pointermove',e=>{if(!dragging)return;let dx=e.clientX-last.x;camYaw+=dx*.006;last={x:e.clientX,y:e.clientY};});
+renderer.domElement.addEventListener('pointerup',e=>{if(!dragging)return;dragging=false;if(Math.hypot(e.clientX-down.x,e.clientY-down.y)>8)return;const p=pick(e);worldTap(p)});
+renderer.domElement.addEventListener('wheel',e=>{camDist=Math.max(24,Math.min(62,camDist+e.deltaY*.035));},{passive:true});
+function animate(){requestAnimationFrame(animate);const target=new THREE.Vector3(0,0,0);camera.position.set(Math.sin(camYaw)*camDist*.7,camDist*.65,Math.cos(camYaw)*camDist*.8);camera.lookAt(target);renderer.render(scene,camera)}
+window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+select(null);refreshStats();animate();
+})();
+</script>
+</body>
+</html>
